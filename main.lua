@@ -1,15 +1,29 @@
 #!/usr/bin/env lua
+local logger = require("logger")
+
 local function get_first_heading(content)
   -- Match the first # heading, trim spaces
-  local heading = content:match("^#%s*(.-)%s*()") or content:match("\n#%s*(.-)%s*()")
+  local heading = content:match("^#%s*(.-)%s*()") or content:match("\n#%s*(.-)%s*()") or content:match("#%s*(.-)%s*\n")
+  if not heading or heading == "" then
+    return nil
+  end
+
   return heading
 end
 
 local function sanitize_filename(desired_filename)
+  if not desired_filename then
+    return nil
+  end
+
   -- Convert the desired filename into safe filename
   local filename = desired_filename:gsub("[^%w%s-]", "") -- Remove special chars
   --  :gsub("%s+", "-")       -- Replace spaces with hyphens
   --  :lower()                -- Convert to lowercase
+
+  if filename == "" then
+    return nil
+  end
   return filename .. ".md"
 end
 
@@ -36,7 +50,10 @@ end
 
 local function read_file(path)
   local file = io.open(path, "r")
-  if not file then return nil end
+  if not file then
+    logger.warn("Failed to read the file: %s", path)
+    return nil
+  end
   local content = file:read("*a")
   file:close()
   return content
@@ -84,21 +101,26 @@ local function rename_file(old_path, new_path)
   return true
 end
 
-local function rename_notes(recursive)
+local function rename_notes()
   -- Get folder path from user or command line argument
   local folder_path = arg[1]
 
+  logger.info("Renaming notes in folder: " .. (arg[1] or "using prompted input"))
+
   -- Flag to specify whether or not we should perform the rename operation recursively
   local recursive =(arg[2] and arg[2] == "--recursive") or false
+
   if not folder_path then
     io.write("Enter the folder path: ")
     folder_path = io.read()
   end
 
   if folder_path == "" then
-    print("No folder path provided")
+    logger.error("No folder path provided")
     return
   end
+
+  logger.info("Using folder path: " .. folder_path)
 
   -- Ensure folder path ends with separator
   folder_path = folder_path:gsub("[\\/]$", "") .. "/"
@@ -110,6 +132,9 @@ local function rename_notes(recursive)
   else
     files = get_files_in_directory_non_recursive(folder_path)
   end
+
+  logger.info("Number of markdown files found: " .. #files)
+
   local file_mapping = {}
   local existing_files = {}
 
@@ -118,29 +143,42 @@ local function rename_notes(recursive)
     -- Read the file content
     local content = read_file(file_path)
     if content then
+      logger.debug(string.format("File content of %s: \n%s", file_path, content))
       local heading = get_first_heading(content)
       if heading then
+        logger.info(string.format("Found first level heading: %s", heading))
         -- Extract the filename, it's the part at the end of the file that does
         -- not contain any forward slash '/'
         local old_filename = file_path:match("([^/]+)$")
-
+        logger.info(string.format("Processing file: %s", old_filename))
         -- Sanitize the heading and make it safe to use
         local new_filename = sanitize_filename(heading)
 
-        -- Ensure that the filename is unique
-        new_filename = make_unique_filename(new_filename, existing_files)
+        if not new_filename then
+          logger.warn(string.format("Skipping %s: Could not generate valid filename from heading", old_filename))
+        else
+          -- Ensure that the filename is unique,
+          -- Numbers will be appended if not unique
+          new_filename = make_unique_filename(new_filename, existing_files)
 
-        -- Create a mapping for the old filename to the new filename
-        file_mapping[old_filename] = new_filename
+          -- Create a mapping for the old filename to the new filename
+          file_mapping[old_filename] = new_filename
 
-        -- Update the existence of the current filename
-        existing_files[new_filename] = true
+          -- Update the existence of the current filename
+          existing_files[new_filename] = true
+        end
+      else
+        logger.debug("No heading found in file: " .. file_path)
       end
+    else
+      logger.warn(string.format("File %s have empty content", file_path))
     end
   end
 
   -- Second pass: Update links/references and rename files
   for _, file_path in ipairs(files) do
+    logger.debug("Processing file: " .. file_path)
+
     local content = read_file(file_path)
     if content then
       local modified = false
@@ -168,12 +206,20 @@ local function rename_notes(recursive)
 
       -- Rename the file
       local old_filename = file_path:match("([^/]+)$")
+      logger.info(string.format("Renaming: %s -> %s", old_filename, file_mapping[old_filename]))
+
       if file_mapping[old_filename] then
         local new_path = folder_path .. file_mapping[old_filename]
         if rename_file(file_path, new_path) then
           print(string.format("Renamed: %s -> %s", old_filename, file_mapping[old_filename]))
+        else
+          logger.error(string.format("Failed to rename: %s", old_filename))
         end
+      else
+        logger.warn(string.format("Cannot determine new filename for: %s", old_filename))
       end
+    else
+      logger.warn(string.format("File %s could not be read.", file_path))
     end
   end
 
