@@ -3,7 +3,8 @@ local logger = require("logger")
 
 local function get_first_heading(content)
   -- Match the first # heading, trim spaces
-  local heading = content:match("^#%s*(.-)%s*()") or content:match("\n#%s*(.-)%s*()") or content:match("#%s*(.-)%s*\n")
+  local heading = content:match("#%s*(.-)%s*\n")
+  -- local heading = content:match("^#%s*(.-)%s*()") or content:match("\n#%s*(.-)%s*()") or content:match("#%s*(.-)%s*\n")
   if not heading or heading == "" then
     return nil
   end
