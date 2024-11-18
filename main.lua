@@ -205,12 +205,14 @@ local function rename_notes()
         write_file(file_path, new_content)
       end
 
+      local file_parent_dir = file_path:match("(.*/)")
+
       -- Rename the file
       local old_filename = file_path:match("([^/]+)$")
       logger.info(string.format("Renaming: %s -> %s", old_filename, file_mapping[old_filename]))
 
       if file_mapping[old_filename] then
-        local new_path = folder_path .. file_mapping[old_filename]
+        local new_path = file_parent_dir .. file_mapping[old_filename]
         if rename_file(file_path, new_path) then
           print(string.format("Renamed: %s -> %s", old_filename, file_mapping[old_filename]))
         else
